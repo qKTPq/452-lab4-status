@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>KTP Status Checklist</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- TailwindCSS via CDN -->
+  <!-- Tailwind via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen font-sans">
@@ -21,59 +21,68 @@
     </p>
   </div>
 
-  <!-- App code using the CSV loader -->
   <script type="module">
-    import { loadCsv } from './script.js';
+    // Update <user>, <repo>, <branch>
+    const CSV_URL = 'https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv';
 
-    // Update this to your raw CSV URL produced by the GitHub Action
-    const CSV_URL = 'https://raw.githubusercontent.com/qKTPq/452-lab4-status/main/452-Check_List-KTP.csv';
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], field = '', inQuotes = false;
 
-    const tableContainer = document.getElementById('table-container');
-    const reloadBtn = document.getElementById('reload');
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { field += '"'; i++; }
+            else { inQuotes = false; }
+          } else { field += c; }
+        } else {
+          if (c === '"') inQuotes = true;
+          else if (c === ',') { row.push(field); field = ''; }
+          else if (c === '\n' || c === '\r') {
+            if (c === '\r' && text[i + 1] === '\n') i++;
+            row.push(field); rows.push(row); row = []; field = '';
+          } else field += c;
+        }
+      }
+      if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+      return rows.filter(r => r.some(cell => (cell ?? '').trim() !== ''));
+    }
 
     function renderTable(rows) {
-      if (!rows || rows.length === 0) {
-        tableContainer.innerHTML = '<p class="text-gray-500">No data available.</p>';
-        return;
-      }
+      const target = document.getElementById('table-container');
+      if (!rows?.length) { target.innerHTML = '<p class="text-gray-500">No data.</p>'; return; }
 
-      const headers = rows[0];
-      const data = rows.slice(1);
+      const [headers, ...data] = rows;
+      const thead = '<thead><tr>' + headers.map(h =>
+        `<th class="px-3 py-2 bg-blue-50 text-left font-semibold border-b border-gray-200">${h}</th>`
+      ).join('') + '</tr></thead>';
 
-      let thead = '<thead><tr>';
-      for (const h of headers) {
-        thead += `<th class="px-3 py-2 bg-blue-50 text-left font-semibold border-b border-gray-200">${h}</th>`;
-      }
-      thead += '</tr></thead>';
+      const tbody = '<tbody>' + data.map(r =>
+        `<tr class="odd:bg-gray-50 hover:bg-yellow-50">` +
+        r.map(c => `<td class="px-3 py-2 border-b border-gray-100">${c ?? ''}</td>`).join('') +
+        `</tr>`
+      ).join('') + '</tbody>';
 
-      let tbody = '<tbody>';
-      for (const row of data) {
-        tbody += '<tr class="odd:bg-gray-50 hover:bg-yellow-50">';
-        for (const cell of row) {
-          tbody += `<td class="px-3 py-2 border-b border-gray-100">${cell ?? ''}</td>`;
-        }
-        tbody += '</tr>';
-      }
-      tbody += '</tbody>';
-
-      tableContainer.innerHTML = `
-        <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
-          ${thead}${tbody}
-        </table>`;
+      target.innerHTML = `<table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">${thead}${tbody}</table>`;
     }
 
     async function loadAndRender() {
-      tableContainer.innerHTML = 'Loading...';
+      const target = document.getElementById('table-container');
+      target.innerHTML = 'Loading...';
       try {
-        const rows = await loadCsv(CSV_URL);
-        renderTable(rows);
+        const bust = CSV_URL + (CSV_URL.includes('?') ? '&' : '?') + 't=' + Date.now();
+        const res = await fetch(bust, { cache: 'no-store' });
+        if (!res.ok) throw new Error(res.statusText);
+        const text = await res.text();
+        renderTable(parseCsv(text));
       } catch (err) {
         console.error(err);
-        tableContainer.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
+        target.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
       }
     }
 
-    reloadBtn.addEventListener('click', loadAndRender);
+    document.getElementById('reload').addEventListener('click', loadAndRender);
     loadAndRender();
   </script>
 </body>
