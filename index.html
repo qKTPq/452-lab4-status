@@ -2,83 +2,147 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>KTP Status Checklist</title>
+  <title>CSV Table (Selected Columns)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Tailwind via CDN -->
+  <!-- Tailwind (optional modern styling) -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Papa Parse for robust CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
-<body class="bg-gray-100 min-h-screen font-sans">
-  <div class="max-w-6xl mx-auto mt-8 p-6 bg-white rounded-xl shadow">
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-2xl md:text-3xl font-bold text-blue-700">KTP Status Checklist</h1>
-      <button id="reload" class="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md">Reload</button>
+<body class="bg-gray-100 min-h-screen">
+  <main class="max-w-6xl mx-auto p-6">
+    <div class="bg-white shadow rounded-xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-xl md:text-2xl font-bold text-blue-700">KTP Status Checklist</h1>
+        <button id="reload" class="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md">Reload</button>
+      </div>
+      <div id="table-container" class="overflow-x-auto text-sm">Loading...</div>
     </div>
-    <div id="table-container" class="overflow-x-auto text-sm">Loading...</div>
-    <p class="text-gray-600 mt-4">
-      Remark: <span class="font-semibold">1 = Received</span>,
-      <span class="font-semibold">0 = Not received</span>,
-      <span class="font-semibold">- = Pending</span>
-    </p>
-  </div>
+  </main>
 
   <script type="module">
-    // Update <user>, <repo>, <branch>
+    // UPDATE THIS to your CSV raw URL (GitHub, etc.)
+    // Example: 'https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv'
     const CSV_URL = 'https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv';
 
-    function parseCsv(text) {
-      const rows = [];
-      let row = [], field = '', inQuotes = false;
+    // Only these columns will be shown (in this exact order)
+    const TARGET_HEADERS = [
+      'Status', 'NO.', 'Date', 'Group', 'Safety',
+      'Prelab', 'Full Report', 'Calculation', 'Due', 'Over Due'
+    ];
 
-      for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (inQuotes) {
-          if (c === '"') {
-            if (text[i + 1] === '"') { field += '"'; i++; }
-            else { inQuotes = false; }
-          } else { field += c; }
-        } else {
-          if (c === '"') inQuotes = true;
-          else if (c === ',') { row.push(field); field = ''; }
-          else if (c === '\n' || c === '\r') {
-            if (c === '\r' && text[i + 1] === '\n') i++;
-            row.push(field); rows.push(row); row = []; field = '';
-          } else field += c;
+    // Some files may contain slight header variations (extra spaces, punctuation).
+    // We'll normalize headers to find matches safely.
+    const normalize = (s) =>
+      String(s ?? '')
+        .toLowerCase()
+        .replace(/\s+/g, '')       // remove spaces
+        .replace(/[._-]+/g, '')    // remove dots/underscores/hyphens
+        .replace(/[:;/\\]+/g, ''); // remove other punctuations
+
+    // Accept both 'Prelab ' (with space) and 'Prelab'
+    const ACCEPTABLE_VARIANTS = {
+      'Prelab': ['Prelab', 'Prelab '],
+      'NO.': ['NO.', 'No.', 'NO', 'No'],
+      'Over Due': ['Over Due', 'OverDue', 'Overdue', 'Over  Due']
+    };
+
+    function buildHeaderMap(csvHeaders) {
+      const map = {};
+      const normalizedCsv = csvHeaders.map(h => ({ raw: h, norm: normalize(h) }));
+
+      for (const target of TARGET_HEADERS) {
+        // Candidate header names (target + known variants)
+        const candidates = new Set([target, ...(ACCEPTABLE_VARIANTS[target] || [])]);
+
+        // 1) Exact raw match
+        let found = csvHeaders.find(h => candidates.has(h));
+        if (!found) {
+          // 2) Trimmed exact match
+          found = csvHeaders.find(h => candidates.has(String(h).trim()));
         }
+        if (!found) {
+          // 3) Normalized match
+          const normTargetCandidates = [...candidates].map(normalize);
+          const match = normalizedCsv.find(o => normTargetCandidates.includes(o.norm));
+          if (match) found = match.raw;
+        }
+
+        // As a last resort, attempt loose normalized matching (e.g., 'OverDue' vs 'Over Due')
+        if (!found) {
+          const normTarget = normalize(target);
+          const match = normalizedCsv.find(o => o.norm === normTarget);
+          if (match) found = match.raw;
+        }
+
+        map[target] = found || null; // may be null if not found
       }
-      if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
-      return rows.filter(r => r.some(cell => (cell ?? '').trim() !== ''));
+      return map;
     }
 
-    function renderTable(rows) {
-      const target = document.getElementById('table-container');
-      if (!rows?.length) { target.innerHTML = '<p class="text-gray-500">No data.</p>'; return; }
+    function renderTableFromObjects(rows, headerMap) {
+      const container = document.getElementById('table-container');
 
-      const [headers, ...data] = rows;
-      const thead = '<thead><tr>' + headers.map(h =>
-        `<th class="px-3 py-2 bg-blue-50 text-left font-semibold border-b border-gray-200">${h}</th>`
-      ).join('') + '</tr></thead>';
+      if (!rows || rows.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No data available.</p>';
+        return;
+      }
 
-      const tbody = '<tbody>' + data.map(r =>
-        `<tr class="odd:bg-gray-50 hover:bg-yellow-50">` +
-        r.map(c => `<td class="px-3 py-2 border-b border-gray-100">${c ?? ''}</td>`).join('') +
-        `</tr>`
-      ).join('') + '</tbody>';
+      // Build thead
+      const thead = `
+        <thead>
+          <tr>
+            ${TARGET_HEADERS.map(h => `
+              <th class="px-3 py-2 bg-blue-50 text-left font-semibold border-b border-gray-200">${h}</th>
+            `).join('')}
+          </tr>
+        </thead>
+      `;
 
-      target.innerHTML = `<table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">${thead}${tbody}</table>`;
+      // Build tbody with only selected columns (respecting order)
+      const tbody = `
+        <tbody>
+          ${rows.map(row => {
+            const tds = TARGET_HEADERS.map(h => {
+              const key = headerMap[h];
+              const val = key ? (row[key] ?? '') : '';
+              return `<td class="px-3 py-2 border-b border-gray-100">${val}</td>`;
+            }).join('');
+            return `<tr class="odd:bg-gray-50 hover:bg-yellow-50">${tds}</tr>`;
+          }).join('')}
+        </tbody>
+      `;
+
+      container.innerHTML = `
+        <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+          ${thead}
+          ${tbody}
+        </table>
+      `;
+    }
+
+    async function loadCsvObjects(url) {
+      const bust = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+      const res = await fetch(bust, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to fetch CSV: ' + res.status);
+      const text = await res.text();
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      if (parsed.errors?.length) {
+        console.warn('CSV parse warnings:', parsed.errors.slice(0, 3));
+      }
+      return { rows: parsed.data, headers: parsed.meta.fields || [] };
     }
 
     async function loadAndRender() {
-      const target = document.getElementById('table-container');
-      target.innerHTML = 'Loading...';
+      const container = document.getElementById('table-container');
+      container.innerHTML = 'Loading...';
       try {
-        const bust = CSV_URL + (CSV_URL.includes('?') ? '&' : '?') + 't=' + Date.now();
-        const res = await fetch(bust, { cache: 'no-store' });
-        if (!res.ok) throw new Error(res.statusText);
-        const text = await res.text();
-        renderTable(parseCsv(text));
-      } catch (err) {
-        console.error(err);
-        target.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
+        const { rows, headers } = await loadCsvObjects(CSV_URL);
+        const headerMap = buildHeaderMap(headers);
+        renderTableFromObjects(rows, headerMap);
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
       }
     }
 
