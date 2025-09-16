@@ -1,0 +1,28 @@
+name: Convert Excel to CSV
+
+on:
+  push:
+    paths:
+      - '452-Check_List-KTP.xlsx'
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: pip install pandas openpyxl
+      - name: Convert Excel to CSV
+        run: |
+          python -c "import pandas as pd; df = pd.read_excel('452-Check_List-KTP.xlsx'); df.to_csv('452-Check_List-KTP.csv', index=False)"
+      - name: Commit and push CSV
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git add 452-Check_List-KTP.csv
+          git commit -m 'Auto-convert Excel to CSV'
+          git push
