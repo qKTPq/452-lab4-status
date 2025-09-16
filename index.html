@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>KTP Status Checklist</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- TailwindCSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+  <div class="max-w-6xl mx-auto mt-8 p-6 bg-white rounded-xl shadow">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl md:text-3xl font-bold text-blue-700">KTP Status Checklist</h1>
+      <button id="reload" class="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md">Reload</button>
+    </div>
+    <div id="table-container" class="overflow-x-auto text-sm">Loading...</div>
+    <p class="text-gray-600 mt-4">
+      Remark: <span class="font-semibold">1 = Received</span>,
+      <span class="font-semibold">0 = Not received</span>,
+      <span class="font-semibold">- = Pending</span>
+    </p>
+  </div>
+
+  <!-- App code using the CSV loader -->
+  <script type="module">
+    import { loadCsv } from './script.js';
+
+    // Update this to your raw CSV URL produced by the GitHub Action
+    const CSV_URL = 'https://raw.githubusercontent.com/qKTPq/452-lab4-status/main/452-Check_List-KTP.csv';
+
+    const tableContainer = document.getElementById('table-container');
+    const reloadBtn = document.getElementById('reload');
+
+    function renderTable(rows) {
+      if (!rows || rows.length === 0) {
+        tableContainer.innerHTML = '<p class="text-gray-500">No data available.</p>';
+        return;
+      }
+
+      const headers = rows[0];
+      const data = rows.slice(1);
+
+      let thead = '<thead><tr>';
+      for (const h of headers) {
+        thead += `<th class="px-3 py-2 bg-blue-50 text-left font-semibold border-b border-gray-200">${h}</th>`;
+      }
+      thead += '</tr></thead>';
+
+      let tbody = '<tbody>';
+      for (const row of data) {
+        tbody += '<tr class="odd:bg-gray-50 hover:bg-yellow-50">';
+        for (const cell of row) {
+          tbody += `<td class="px-3 py-2 border-b border-gray-100">${cell ?? ''}</td>`;
+        }
+        tbody += '</tr>';
+      }
+      tbody += '</tbody>';
+
+      tableContainer.innerHTML = `
+        <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+          ${thead}${tbody}
+        </table>`;
+    }
+
+    async function loadAndRender() {
+      tableContainer.innerHTML = 'Loading...';
+      try {
+        const rows = await loadCsv(CSV_URL);
+        renderTable(rows);
+      } catch (err) {
+        console.error(err);
+        tableContainer.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
+      }
+    }
+
+    reloadBtn.addEventListener('click', loadAndRender);
+    loadAndRender();
+  </script>
+</body>
+</html>
