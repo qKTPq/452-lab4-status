@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>CSV Table (Selected Columns)</title>
+  <title>KTP Status Checklist</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Tailwind (optional modern styling) -->
+  <!-- Tailwind for modern styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Papa Parse for robust CSV parsing -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -12,75 +12,85 @@
 <body class="bg-gray-100 min-h-screen">
   <main class="max-w-6xl mx-auto p-6">
     <div class="bg-white shadow rounded-xl p-5">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center justify-between gap-4 mb-4">
         <h1 class="text-xl md:text-2xl font-bold text-blue-700">KTP Status Checklist</h1>
-        <button id="reload" class="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md">Reload</button>
+        <div class="flex items-center gap-2">
+          <button id="reload" class="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md">Reload</button>
+        </div>
       </div>
+
+      <div id="notice" class="hidden mb-3 p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-800"></div>
       <div id="table-container" class="overflow-x-auto text-sm">Loading...</div>
+
+      <p class="text-gray-600 mt-4">
+        Remark: <span class="font-semibold">1 = Received</span>,
+        <span class="font-semibold">0 = Not received</span>,
+        <span class="font-semibold">- = Pending</span>
+      </p>
+
+      <details class="mt-4">
+        <summary class="cursor-pointer text-gray-700">Debug info</summary>
+        <pre id="debug" class="mt-2 p-3 bg-gray-50 border rounded text-xs overflow-auto"></pre>
+      </details>
     </div>
   </main>
 
-  <script type="module">
-    // UPDATE THIS to your CSV raw URL (GitHub, etc.)
-    // Example: 'https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv'
-    const CSV_URL = 'https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv';
+  <script>
+    // 1) Set your CSV URL here.
+    // - If hosted on GitHub Pages, use the raw link:
+    //   https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv
+    // - If the CSV is in the same folder as this HTML, you can just set: '452-Check List-KTP.csv'
+    const CSV_URL = 'https://raw.githubusercontent.com/qKTPq/452-lab4-status/refs/heads/main/452-Check%20List-KTP.csv?token=GHSAT0AAAAAADHAEUU3ANFPM57HHAL42S2E2GJRYQA';
 
-    // Only these columns will be shown (in this exact order)
+    // 2) Only these columns (in this exact order) will be displayed:
     const TARGET_HEADERS = [
       'Status', 'NO.', 'Date', 'Group', 'Safety',
       'Prelab', 'Full Report', 'Calculation', 'Due', 'Over Due'
     ];
 
-    // Some files may contain slight header variations (extra spaces, punctuation).
-    // We'll normalize headers to find matches safely.
+    // 3) Allow minor header variations (extra spaces, punctuation)
+    const ACCEPTABLE_VARIANTS = {
+      'Status': ['Status'],
+      'NO.': ['NO.', 'No.', 'NO', 'No', 'Number', 'No. '],
+      'Date': ['Date', 'DATE'],
+      'Group': ['Group', 'GROUP'],
+      'Safety': ['Safety', 'SAFETY'],
+      'Prelab': ['Prelab', 'Prelab ', 'Pre-lab', 'Pre lab'],
+      'Full Report': ['Full Report', 'FullReport', 'Report'],
+      'Calculation': ['Calculation', 'Calculations'],
+      'Due': ['Due', 'DUE'],
+      'Over Due': ['Over Due', 'Overdue', 'OverDue', 'Over  Due', 'Over  due']
+    };
+
+    // Normalize header by removing spaces/punctuation and lowering case
     const normalize = (s) =>
       String(s ?? '')
         .toLowerCase()
-        .replace(/\s+/g, '')       // remove spaces
-        .replace(/[._-]+/g, '')    // remove dots/underscores/hyphens
-        .replace(/[:;/\\]+/g, ''); // remove other punctuations
-
-    // Accept both 'Prelab ' (with space) and 'Prelab'
-    const ACCEPTABLE_VARIANTS = {
-      'Prelab': ['Prelab', 'Prelab '],
-      'NO.': ['NO.', 'No.', 'NO', 'No'],
-      'Over Due': ['Over Due', 'OverDue', 'Overdue', 'Over  Due']
-    };
+        .replace(/\s+/g, '')
+        .replace(/[._-]+/g, '')
+        .replace(/[:;/\\]+/g, '');
 
     function buildHeaderMap(csvHeaders) {
       const map = {};
       const normalizedCsv = csvHeaders.map(h => ({ raw: h, norm: normalize(h) }));
 
       for (const target of TARGET_HEADERS) {
-        // Candidate header names (target + known variants)
-        const candidates = new Set([target, ...(ACCEPTABLE_VARIANTS[target] || [])]);
+        const variants = new Set([target, ...(ACCEPTABLE_VARIANTS[target] || [])]);
 
-        // 1) Exact raw match
-        let found = csvHeaders.find(h => candidates.has(h));
+        // Try: exact raw | trimmed | normalized
+        let found = csvHeaders.find(h => variants.has(h));
+        if (!found) found = csvHeaders.find(h => variants.has(String(h).trim()));
         if (!found) {
-          // 2) Trimmed exact match
-          found = csvHeaders.find(h => candidates.has(String(h).trim()));
-        }
-        if (!found) {
-          // 3) Normalized match
-          const normTargetCandidates = [...candidates].map(normalize);
-          const match = normalizedCsv.find(o => normTargetCandidates.includes(o.norm));
+          const normCandidates = [...variants].map(normalize);
+          const match = normalizedCsv.find(o => normCandidates.includes(o.norm));
           if (match) found = match.raw;
         }
-
-        // As a last resort, attempt loose normalized matching (e.g., 'OverDue' vs 'Over Due')
-        if (!found) {
-          const normTarget = normalize(target);
-          const match = normalizedCsv.find(o => o.norm === normTarget);
-          if (match) found = match.raw;
-        }
-
-        map[target] = found || null; // may be null if not found
+        map[target] = found || null;
       }
       return map;
     }
 
-    function renderTableFromObjects(rows, headerMap) {
+    function renderTable(rows, headerMap) {
       const container = document.getElementById('table-container');
 
       if (!rows || rows.length === 0) {
@@ -88,7 +98,19 @@
         return;
       }
 
-      // Build thead
+      const missing = Object.entries(headerMap)
+        .filter(([_, actual]) => !actual)
+        .map(([wanted]) => wanted);
+
+      const notice = document.getElementById('notice');
+      if (missing.length) {
+        notice.classList.remove('hidden');
+        notice.textContent = `Warning: Missing columns in CSV: ${missing.join(', ')}`;
+      } else {
+        notice.classList.add('hidden');
+        notice.textContent = '';
+      }
+
       const thead = `
         <thead>
           <tr>
@@ -99,16 +121,15 @@
         </thead>
       `;
 
-      // Build tbody with only selected columns (respecting order)
       const tbody = `
         <tbody>
-          ${rows.map(row => {
+          ${rows.map(rowObj => {
             const tds = TARGET_HEADERS.map(h => {
-              const key = headerMap[h];
-              const val = key ? (row[key] ?? '') : '';
+              const actual = headerMap[h];
+              const val = actual ? (rowObj[actual] ?? '') : '';
               return `<td class="px-3 py-2 border-b border-gray-100">${val}</td>`;
             }).join('');
-            return `<tr class="odd:bg-gray-50 hover:bg-yellow-50">${tds}</tr>`;
+            return `<tr class="odd:bg-gray-50 hover:bg-yellow-50 transition-colors">${tds}</tr>`;
           }).join('')}
         </tbody>
       `;
@@ -121,28 +142,32 @@
       `;
     }
 
-    async function loadCsvObjects(url) {
-      const bust = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
-      const res = await fetch(bust, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to fetch CSV: ' + res.status);
-      const text = await res.text();
-      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-      if (parsed.errors?.length) {
-        console.warn('CSV parse warnings:', parsed.errors.slice(0, 3));
-      }
-      return { rows: parsed.data, headers: parsed.meta.fields || [] };
+    async function fetchCsvText(url) {
+      const bust = (url.includes('?') ? '&' : '?') + 't=' + Date.now(); // cache-busting
+      const res = await fetch(url + bust, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+      return res.text();
     }
 
     async function loadAndRender() {
-      const container = document.getElementById('table-container');
-      container.innerHTML = 'Loading...';
+      const tableContainer = document.getElementById('table-container');
+      const debug = document.getElementById('debug');
+      tableContainer.innerHTML = 'Loading...';
+
       try {
-        const { rows, headers } = await loadCsvObjects(CSV_URL);
+        const text = await fetchCsvText(CSV_URL);
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+        const rows = parsed.data || [];
+        const headers = parsed.meta?.fields || [];
+
+        // Debug info in <details>
+        debug.textContent = JSON.stringify({ headers, sampleRow: rows[0] || null, rowCount: rows.length }, null, 2);
+
         const headerMap = buildHeaderMap(headers);
-        renderTableFromObjects(rows, headerMap);
+        renderTable(rows, headerMap);
       } catch (e) {
         console.error(e);
-        container.innerHTML = '<p class="text-red-600">Failed to load data.</p>';
+        tableContainer.innerHTML = '<p class="text-red-600">Failed to load data. Check CSV_URL and browser console.</p>';
       }
     }
 
