@@ -1,21 +1,36 @@
 // script.js (ES module)
-// Reads a CSV from a URL and returns an array of rows (each row is an array of cells)
 
-export async function loadCsv(url) {
+export async function loadCsv(urlOrBase, maybeFilename) {
+  // Build a safe URL (handles spaces) if base + filename provided
+  const url = maybeFilename
+    ? String(new URL(maybeFilename, urlOrBase))
+    : String(new URL(urlOrBase, window.location.href));
+
   // Cache-busting query to make sure GitHub updates are reflected immediately
   const bust = url.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
+
   const res = await fetch(url + bust, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Failed to fetch CSV: ${res.status}`);
-  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Failed to fetch CSV: ${res.status} ${res.statusText} at ${url}`);
+  }
+
+  let text = await res.text();
+
+  // Strip UTF-8 BOM if present and normalize newlines
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  text = text.replace(/\r\n?/g, '\n');
+
   return parseCsv(text);
 }
 
-// Minimal CSV parser supporting quotes and commas
-function parseCsv(text) {
+// Minimal CSV parser supporting quotes and commas/semicolons/tabs
+function parseCsv(text, delimiter) {
   const rows = [];
   let row = [];
   let field = '';
   let inQuotes = false;
+
+  const delim = delimiter || detectDelimiter(text); // ',', ';', '\t', or '|'
 
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -35,12 +50,10 @@ function parseCsv(text) {
     } else {
       if (c === '"') {
         inQuotes = true;
-      } else if (c === ',') {
+      } else if (c === delim) {
         row.push(field);
         field = '';
-      } else if (c === '\n' || c === '\r') {
-        // Handle Windows newlines \r\n
-        if (c === '\r' && text[i + 1] === '\n') i++;
+      } else if (c === '\n') {
         row.push(field);
         rows.push(row);
         row = [];
@@ -59,4 +72,15 @@ function parseCsv(text) {
 
   // Remove empty trailing rows
   return rows.filter(r => r.some(cell => (cell ?? '').trim() !== ''));
+}
+
+function detectDelimiter(text) {
+  const firstLine = text.split('\n', 1)[0] ?? '';
+  const candidates = [',', ';', '\t', '|'];
+  let best = ',', bestCount = 0;
+  for (const d of candidates) {
+    const count = firstLine.split(d).length;
+    if (count > bestCount) { best = d; bestCount = count; }
+  }
+  return best;
 }
