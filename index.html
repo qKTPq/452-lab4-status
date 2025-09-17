@@ -2,20 +2,54 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>KTP Status Checklist</title>
+  <title>Lab 4: Gas Absorption Status by KTP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Favicon (uses ct_logo.png) -->
+  <link rel="icon" type="image/png" href="./ct_logo.png" />
+  <link rel="shortcut icon" type="image/png" href="./ct_logo.png" />
+
   <!-- Tailwind for modern styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Papa Parse for robust CSV parsing -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
+  <!-- Header with logo, title, and subtitle -->
+  <header class="max-w-6xl mx-auto p-6 pt-8">
+    <div class="flex items-center gap-4">
+      <!-- Logo -->
+      <img
+        src="./ct_logo.png"
+        alt="Department of Chemical Technology, Faculty of Science, Chulalongkorn University logo"
+        class="h-14 w-14 md:h-16 md:w-16 object-contain"
+      />
+      <!-- Title and subtitle -->
+      <div>
+        <h1 class="text-lg md:text-2xl font-semibold text-gray-900">
+          Department of Chemical Technology, Faculty of Science, Chulalongkorn University
+        </h1>
+        <p class="text-sm md:text-base text-gray-600">
+          2306452 Unit Operations Laboratory II : Lab 4 Gas Absorption
+        </p>
+        <p class="text-sm md:text-base text-gray-900 font-semibold">
+          Instructor: Asst. Prof. Dr. Pichaya In-na
+          <br />
+          TA: Mr. Kantaphan Punnaanan
+        </p>
+      </div>
+    </div>
+  </header>
+
   <main class="max-w-6xl mx-auto p-6">
     <div class="bg-white shadow rounded-xl p-5">
       <div class="flex items-center justify-between gap-4 mb-2">
-        <h1 class="text-xl md:text-2xl font-bold text-green-700">Lab 4: Gas Absorption Status</h1>
+        <!-- Changed to h2 to keep semantic structure (h1 already used above) -->
+        <h2 class="text-xl md:text-2xl font-bold text-green-700">Lab 4: Gas Absorption Status</h2>
         <div class="flex items-center gap-2">
-          <button id="reload" class="px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md">Reload</button>
+          <button id="reload" class="px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md" aria-label="Reload data">
+            Reload
+          </button>
         </div>
       </div>
 
