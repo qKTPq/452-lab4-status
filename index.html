@@ -18,12 +18,12 @@
           <button id="reload" class="px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md">Reload</button>
         </div>
       </div>
-      
-      
-      <!-- Update date -->
-      <!-- Update date -->
+
+      <!-- Update/loaded date (auto-filled from response headers if available) -->
       <p class="text-gray-600 mb-4">
-        <span class="font-medium text-green-700">Update date:</span> 16 Sep 25 Time 10:46PM
+        <span class="font-medium text-green-700">Update date:</span>
+        <span id="update-date">—</span>
+        <span id="data-source" class="ml-2 text-xs text-gray-500"></span>
       </p>
 
       <!-- Notice (now green themed) -->
@@ -48,11 +48,13 @@
   </main>
 
   <script>
-    // 1) Set your CSV URL here.
-    // - If hosted on GitHub Pages, use the raw link:
-    //   https://raw.githubusercontent.com/<user>/<repo>/<branch>/452-Check%20List-KTP.csv
-    // - If the CSV is in the same folder as this HTML, you can just set: '452-Check List-KTP.csv'
-    const CSV_URL = 'https://raw.githubusercontent.com/qKTPq/452-lab4-status/refs/heads/main/452-Check%20List-KTP.csv?token=GHSAT0AAAAAADHAEUU3ANFPM57HHAL42S2E2GJRYQA';
+    // 1) CSV source(s). The first is the preferred raw GitHub URL (no token, no refs/heads).
+    //    The second is a jsDelivr CDN fallback. The third is a relative fallback if CSV is hosted with the page.
+    const CSV_URLS = [
+      'https://raw.githubusercontent.com/qKTPq/452-lab4-status/main/452-Check%20List-KTP.csv',
+      'https://cdn.jsdelivr.net/gh/qKTPq/452-lab4-status@main/452-Check%20List-KTP.csv',
+      '452-Check List-KTP.csv'
+    ];
 
     // 2) Only these columns (in this exact order) will be displayed:
     const TARGET_HEADERS = [
@@ -157,17 +159,62 @@
     async function fetchCsvText(url) {
       const bust = (url.includes('?') ? '&' : '?') + 't=' + Date.now(); // cache-busting
       const res = await fetch(url + bust, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
-      return res.text();
+      const snippet = async () => {
+        try { return (await res.clone().text()).slice(0, 300); } catch { return ''; }
+      };
+      if (!res.ok) {
+        const s = await snippet();
+        throw new Error(`Fetch failed: ${res.status} ${res.statusText}${s ? ' - ' + s : ''}`);
+      }
+      const text = await res.text();
+      const lastModified = res.headers.get('last-modified');
+      return { text, lastModified, source: url };
+    }
+
+    async function loadFromAny(urls) {
+      const errors = [];
+      for (const url of urls) {
+        try {
+          return await fetchCsvText(url);
+        } catch (e) {
+          console.warn('Source failed:', url, e);
+          errors.push(`${url} -> ${e.message}`);
+        }
+      }
+      const err = new Error('All sources failed:\n' + errors.join('\n'));
+      err.all = errors;
+      throw err;
+    }
+
+    function setUpdateInfo(lastModified, source) {
+      const updateEl = document.getElementById('update-date');
+      const srcEl = document.getElementById('data-source');
+      if (lastModified) {
+        const when = new Date(lastModified);
+        updateEl.textContent = isNaN(when.getTime())
+          ? `Response time: ${new Date().toLocaleString()}`
+          : when.toLocaleString();
+      } else {
+        updateEl.textContent = new Date().toLocaleString();
+      }
+      srcEl.textContent = source ? `(source: ${new URL(source).hostname})` : '';
     }
 
     async function loadAndRender() {
       const tableContainer = document.getElementById('table-container');
+      const notice = document.getElementById('notice');
+      notice.classList.add('hidden');
+      notice.textContent = '';
       tableContainer.innerHTML = 'Loading...';
 
       try {
-        const text = await fetchCsvText(CSV_URL);
+        const { text, lastModified, source } = await loadFromAny(CSV_URLS);
+        setUpdateInfo(lastModified, source);
+
         const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+        if (parsed.errors && parsed.errors.length) {
+          console.warn('Papa Parse warnings:', parsed.errors);
+        }
         const rows = parsed.data || [];
         const headers = parsed.meta?.fields || [];
 
@@ -175,7 +222,12 @@
         renderTable(rows, headerMap);
       } catch (e) {
         console.error(e);
-        tableContainer.innerHTML = '<p class="text-red-600">Failed to load data. Check CSV_URL and browser console.</p>';
+        tableContainer.innerHTML = `
+          <div class="p-3 rounded-md bg-red-50 border border-red-200 text-red-700">
+            <p class="font-semibold">Failed to load data.</p>
+            <pre class="mt-2 text-xs whitespace-pre-wrap">${e.message}</pre>
+          </div>
+        `;
       }
     }
 
