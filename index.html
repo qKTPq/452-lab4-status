@@ -19,14 +19,13 @@
         </div>
       </div>
 
-      <!-- Update/loaded date (auto-filled from response headers if available) -->
+      <!-- Update date -->
       <p class="text-gray-600 mb-4">
         <span class="font-medium text-green-700">Update date:</span>
         <span id="update-date">—</span>
-        <span id="data-source" class="ml-2 text-xs text-gray-500"></span>
       </p>
 
-      <!-- Notice (now green themed) -->
+      <!-- Notice -->
       <div id="notice" class="hidden mb-3 p-3 rounded-md bg-green-50 border border-green-200 text-green-800"></div>
 
       <div id="table-container" class="overflow-x-auto text-sm">Loading...</div>
@@ -48,21 +47,17 @@
   </main>
 
   <script>
-    // 1) CSV source(s). The first is the preferred raw GitHub URL (no token, no refs/heads).
-    //    The second is a jsDelivr CDN fallback. The third is a relative fallback if CSV is hosted with the page.
-    const CSV_URLS = [
-      'https://raw.githubusercontent.com/qKTPq/452-lab4-status/main/452-Check%20List-KTP.csv',
-      'https://cdn.jsdelivr.net/gh/qKTPq/452-lab4-status@main/452-Check%20List-KTP.csv',
-      '452-Check List-KTP.csv'
-    ];
+    // CSV is already in the repo (same folder as this HTML)
+    // If your CSV is in a subfolder, e.g., /data, change to './data/452-Check List-KTP.csv'
+    const CSV_URL = encodeURI('./452-Check List-KTP.csv');
 
-    // 2) Only these columns (in this exact order) will be displayed:
+    // Only these columns (in this exact order) will be displayed:
     const TARGET_HEADERS = [
       'Status', 'NO.', 'Date', 'Group', 'Safety',
       'Prelab', 'Full Report', 'Calculation', 'Due', 'Over Due'
     ];
 
-    // 3) Allow minor header variations (extra spaces, punctuation)
+    // Allow minor header variations (extra spaces, punctuation)
     const ACCEPTABLE_VARIANTS = {
       'Status': ['Status'],
       'NO.': ['NO.', 'No.', 'NO', 'No', 'Number', 'No. '],
@@ -157,59 +152,28 @@
     }
 
     async function fetchCsvText(url) {
-      const bust = (url.includes('?') ? '&' : '?') + 't=' + Date.now(); // cache-busting
+      // cache-busting for GitHub Pages and static hosting
+      const bust = (url.includes('?') ? '&' : '?') + 't=' + Date.now();
       const res = await fetch(url + bust, { cache: 'no-store' });
-      const snippet = async () => {
-        try { return (await res.clone().text()).slice(0, 300); } catch { return ''; }
-      };
       if (!res.ok) {
-        const s = await snippet();
-        throw new Error(`Fetch failed: ${res.status} ${res.statusText}${s ? ' - ' + s : ''}`);
+        const snippet = await res.text().catch(() => '');
+        throw new Error(`Fetch failed: ${res.status} ${res.statusText}${snippet ? ' - ' + snippet.slice(0, 200) : ''}`);
       }
-      const text = await res.text();
-      const lastModified = res.headers.get('last-modified');
-      return { text, lastModified, source: url };
-    }
-
-    async function loadFromAny(urls) {
-      const errors = [];
-      for (const url of urls) {
-        try {
-          return await fetchCsvText(url);
-        } catch (e) {
-          console.warn('Source failed:', url, e);
-          errors.push(`${url} -> ${e.message}`);
-        }
-      }
-      const err = new Error('All sources failed:\n' + errors.join('\n'));
-      err.all = errors;
-      throw err;
-    }
-
-    function setUpdateInfo(lastModified, source) {
-      const updateEl = document.getElementById('update-date');
-      const srcEl = document.getElementById('data-source');
-      if (lastModified) {
-        const when = new Date(lastModified);
-        updateEl.textContent = isNaN(when.getTime())
-          ? `Response time: ${new Date().toLocaleString()}`
-          : when.toLocaleString();
-      } else {
-        updateEl.textContent = new Date().toLocaleString();
-      }
-      srcEl.textContent = source ? `(source: ${new URL(source).hostname})` : '';
+      return res.text();
     }
 
     async function loadAndRender() {
       const tableContainer = document.getElementById('table-container');
       const notice = document.getElementById('notice');
+      const updateEl = document.getElementById('update-date');
+
       notice.classList.add('hidden');
       notice.textContent = '';
       tableContainer.innerHTML = 'Loading...';
 
       try {
-        const { text, lastModified, source } = await loadFromAny(CSV_URLS);
-        setUpdateInfo(lastModified, source);
+        const text = await fetchCsvText(CSV_URL);
+        updateEl.textContent = new Date().toLocaleString();
 
         const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
         if (parsed.errors && parsed.errors.length) {
