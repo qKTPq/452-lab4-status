@@ -51,7 +51,9 @@
     // 1) CSV source(s). The first is the preferred raw GitHub URL (no token, no refs/heads).
     //    The second is a jsDelivr CDN fallback. The third is a relative fallback if CSV is hosted with the page.
     const CSV_URLS = [
-    'https://raw.githubusercontent.com/qKTPq/452-lab4-status/refs/heads/main/452-Check%20List-KTP.csv?token=GHSAT0AAAAAADHAEUU3M7TFTW6FAIHQ5FWQ2GKS4HA'
+      'https://raw.githubusercontent.com/qKTPq/452-lab4-status/main/452-Check%20List-KTP.csv',
+      'https://cdn.jsdelivr.net/gh/qKTPq/452-lab4-status@main/452-Check%20List-KTP.csv',
+      '452-Check List-KTP.csv'
     ];
 
     // 2) Only these columns (in this exact order) will be displayed:
